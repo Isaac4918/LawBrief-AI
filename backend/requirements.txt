@@ -1,6 +1,8 @@
 fastapi
 uvicorn
-openai
-PyPDF2
-sse-starlette
 python-dotenv
+openai>=1.0.0
+azure-storage-blob
+python-docx
+azure-ai-formrecognizer
+pydantic

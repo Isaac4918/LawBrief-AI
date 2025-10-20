@@ -1,11 +1,15 @@
 import React from "react";
-import ChatBox from "./components/ChatBox";
+import Header from "./features/Header";
+import Body from "./features/Body";
 
 function App() {
   return (
-    <div className="app-wrapper">
-      <div className="chat-container">
-        <ChatBox />
+    <div>
+      <div>
+        <Header/>
+      </div>
+      <div>
+        <Body/>
       </div>
     </div>
   );

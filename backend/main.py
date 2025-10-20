@@ -1,86 +1,144 @@
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from models import ChatRequest
-from pdf_loader import load_pdf
-from ai_service import stream_response
-import traceback
+import logging
+from services.blob_service import upload_file_to_blob
+from services.file_utils import extract_text_from_file
+from services.openai_service import analyze_acta
 
-app = FastAPI(title="Chatbot PDF Reader")
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Enable CORS (update allowed origins for production)
+origins = [
+    "http://localhost",
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",  # React dev server (si usas create-react-app)
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+
+app = FastAPI(title="Acta Analyzer API")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this in production
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Try to load PDF context at startup
-try:
-    pdf_context = load_pdf("Accessible_Travel_Guide_Partial.pdf")
-except FileNotFoundError as e:
-    pdf_context = None
-    print(f"[Startup Error] {e}")
+# Configuration constants
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+ALLOWED_EXTENSIONS = {".txt", ".docx"}
+ALLOWED_MIME_TYPES = {
+    "text/plain",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+}
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    # Validate PDF availability
-    if pdf_context is None:
+async def validate_file(file: UploadFile) -> bool:
+    """Valida el archivo antes de procesarlo"""
+    # Validar extensión
+    filename_lower = file.filename.lower()
+    if not any(filename_lower.endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="PDF context could not be loaded. Please check the file path or server logs.",
+            status_code=400,
+            detail=f"Format not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
+    
+    # Validar MIME type
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        logger.warning(f"Suspicious MIME type: {file.content_type} for {file.filename}")
+    
+    return True
 
-    # Validate user message
-    user_message = request.message.strip() if request.message else ""
-    if not user_message:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The 'message' field cannot be empty.",
-        )
+@app.post("/analyze")
+async def analyze_document(file: UploadFile = File(...)):
+    """
+    Endpoint to upload a file and analyze its content.
+    Extracts text from paragraphs and images (OCR) in .docx files.
 
-    async def event_generator():
-        try:
-            async for token in stream_response(user_message, pdf_context):
-                yield f"data: {token}\n\n"
-        except Exception as e:
-            print(f"[Streaming Error] {e}")
-            traceback.print_exc()
-            # Return a structured error to the client via SSE
-            yield f'data: {{"type": "error", "content": "Internal server error: {str(e)}"}}\n\n'
-            yield "data: {\"type\": \"done\"}\n\n"
+    Parameters:
+        file: File to analyze (.txt or .docx)
 
+    Returns:
+        {
+            "filename": str,
+            "result": dict,
+            "status": "success"
+        }
+    """
+    logger.info(f"Starting file analysis: {file.filename}")
+    
     try:
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        # Validate file
+        await validate_file(file)
+        
+        # Read file
+        data = await file.read()
+        
+        # Validate size
+        if len(data) > MAX_FILE_SIZE:
+            logger.warning(f"File exceeds maximum size: {file.filename} ({len(data)} bytes)")
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum: {MAX_FILE_SIZE / 1024 / 1024} MB"
+            )
+        
+        if len(data) == 0:
+            raise HTTPException(status_code=400, detail="File is empty")
+
+        logger.info(f"File validated: {file.filename} ({len(data)} bytes)")
+
+        # Upload file to Blob Storage
+        try:
+            upload_file_to_blob(file.filename, data)
+            logger.info(f"File uploaded to Blob Storage: {file.filename}")
+        except Exception as e:
+            logger.error(f"Error uploading to Blob Storage: {e}")
+            raise HTTPException(status_code=500, detail="Error uploading file")
+
+        # Extract text (with specific error handling)
+        try:
+            texto_completo = extract_text_from_file(data, file.filename)
+            logger.info(f"Text extracted successfully from {file.filename}")
+
+            if not texto_completo or len(texto_completo.strip()) == 0:
+                logger.warning(f"No text extracted from file: {file.filename}")
+                raise HTTPException(
+                    status_code=422,
+                    detail="No text could be extracted from the file"
+                )
+        except ValueError as ve:
+            logger.error(f"Validation error: {ve}")
+            raise HTTPException(status_code=400, detail=str(ve))
+        except Exception as e:
+            logger.error(f"Error extracting text: {e}")
+            raise HTTPException(status_code=500, detail="Error processing file")
+
+        # Analyze with OpenAI
+        try:
+            result = analyze_acta(texto_completo)
+            logger.info(f"Analysis completed for: {file.filename}")
+        except Exception as e:
+            logger.error(f"Error analyzing with OpenAI: {e}")
+            raise HTTPException(status_code=500, detail="Error analyzing content")
+
+        return {
+            "filename": file.filename,
+            "result": result,
+            "status": "success"
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[Chat Endpoint Error] {e}")
-        traceback.print_exc()
+        logger.error(f"Unexpected error: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while processing your request.",
+            status_code=500,
+            detail="Unexpected error processing file"
         )
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handles known HTTP exceptions and returns clean JSON"""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.detail, "code": exc.status_code},
-    )
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Handles unexpected exceptions"""
-    print(f"[Unhandled Exception] {exc}")
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "An unexpected error occurred on the server.",
-            "details": str(exc),
-        },
-    )
+@app.get("/health")
+async def health_check():
+    """Endpoint for health check"""
+    return {"status": "healthy"}
