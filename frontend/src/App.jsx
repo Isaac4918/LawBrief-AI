@@ -1,17 +1,21 @@
 import React from "react";
 import Header from "./features/Header";
 import Body from "./features/Body";
+import { Toaster } from "react-hot-toast";
+import Footer from "./features/Footer";
 
 function App() {
   return (
-    <div>
+    <>
+      <Toaster />
       <div>
-        <Header/>
+        <Header />
       </div>
       <div>
-        <Body/>
+        <Body />
       </div>
-    </div>
+      <Footer />
+    </>
   );
 }
 

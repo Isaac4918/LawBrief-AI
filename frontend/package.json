@@ -1,5 +1,5 @@
 {
-  "name": "chatbot-pdf-reader-frontend",
+  "name": "lawbrief-ai",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
+    "html2pdf.js": "^0.12.1",
+    "lucide-react": "^0.546.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "uuid": "^9.0.1"
+    "react-hot-toast": "^2.6.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

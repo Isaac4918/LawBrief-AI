@@ -12,6 +12,13 @@
     font-size: 1.7rem;
 }
 
+.bac-subtitle {
+    font-family: "Graphik-Regular", sans-serif;
+    color: #E3002B;
+    font-weight: 400;
+    font-size: 1.4rem;
+}
+
 
 .bac-button-highlighted {
     height: 45px;
