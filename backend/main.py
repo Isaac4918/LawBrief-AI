@@ -1,9 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-from app.blob_service import upload_file_to_blob
-from app.file_utils import extract_text_from_file
-from app.openai_service import analyze_acta
+from services.blob_service import upload_file_to_blob
+from services.file_utils import extract_text_from_file
+from services.openai_service import analyze_acta
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
