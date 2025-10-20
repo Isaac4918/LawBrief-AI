@@ -1,30 +1,22 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-from services.blob_service import upload_file_to_blob
-from services.file_utils import extract_text_from_file
-from services.openai_service import analyze_acta
+from app.blob_service import upload_file_to_blob
+from app.file_utils import extract_text_from_file
+from app.openai_service import analyze_acta
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-origins = [
-    "http://localhost",
-    "http://localhost:5173",  # Vite dev server
-    "http://localhost:3000",  # React dev server (si usas create-react-app)
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
-]
-
 app = FastAPI(title="Acta Analyzer API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Permite todos los orígenes
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Permite todos los métodos (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Permite todos los encabezados
 )
 
 # Configuration constants

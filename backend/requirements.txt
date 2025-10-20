@@ -6,3 +6,4 @@ azure-storage-blob
 python-docx
 azure-ai-formrecognizer
 pydantic
+python-multipart
